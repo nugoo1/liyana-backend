@@ -1,74 +1,95 @@
 const express = require('express')
 const router = new express.Router()
 const stripe = require('stripe')(process.env.STRIPE_SECRET_KEY)
-
-// This is your Stripe CLI webhook secret for testing your endpoint locally.
-const endpointSecret =
-  'whsec_c696d382e7881353add4a9b019e950bd766cfbc9802b580e6ed8b97b4d7e402c'
+const Subscription = require('../models/subscription')
+const storeItems = require('../data/pricing')
 
 router.post(
   '/webhook',
   express.raw({ type: 'application/json' }),
-  (request, response) => {
+  async (request, response) => {
     let event = request.body
     // Only verify the event if you have an endpoint secret defined.
     // Otherwise use the basic event deserialized with JSON.parse
-    if (endpointSecret) {
+    if (process.env.ENDPOINT_SECRET) {
       // Get the signature sent by Stripe
       const signature = request.headers['stripe-signature']
       try {
         event = stripe.webhooks.constructEvent(
           request.body,
           signature,
-          endpointSecret
+          process.env.ENDPOINT_SECRET
         )
       } catch (err) {
         console.log(`⚠️  Webhook signature verification failed.`, err.message)
         return response.sendStatus(400)
       }
     }
+    const session = event.data.object
 
     // Handle the event
     switch (event.type) {
-      case 'payment_intent.succeeded':
-        const paymentIntent = event.data.object
-        // console.log(`PaymentIntent for ${paymentIntent.amount} was successful!`)
-        // console.log(paymentIntent)
-        console.log(event)
-        // Then define and call a method to handle the successful payment intent.
-        break
-      // case 'invoice.payment_succeeded':
-      //   const invoice = event.data.object
-      //   console.log(`Invoice for ${invoice.amount_due} was successful!`)
-      //   console.log(invoice)
-      //   break
-      case 'checkout.session.completed':
-        const session = event.data.object
-        console.log(
-          `Checkout session for ${session.amount_total} was successful!`
-        )
-        console.log(session)
-        break
-      // case 'invoice.payment_succeeded':
-      //   const invoice = event.data.object
-      //   console.log(`Invoice for ${invoice.amount} was successful!`)
-      //   console.log(invoice)
-      //   break
       case 'customer.subscription.updated':
-        const subscription = event.data.object
-        console.log(`Subscription for ${subscription.id} was updated!`)
-        console.log(subscription)
+        console.log(`Subscription for ${session.id} was updated!`)
+        console.log(session)
+        // Retrieve the email of the customer
+        const customer = await stripe.customers.retrieve(session.customer)
+        const product = await stripe.products.retrieve(session.plan.product)
+
+        // See if subscription exists in database
+        const subscriptionData = await Subscription.findOne({
+          email: customer.email
+        })
+
+        if (!subscriptionData) {
+          // Brand New Subscription
+          const newSub = new Subscription({
+            subscriptionId: session.id,
+            customerId: session.customer,
+            email: customer.email,
+            status: session.status,
+            start_date: session.start_date,
+            cancel_at: session.cancel_at,
+            cancel_at_period_end: session.cancel_at_period_end,
+            canceled_at: session.canceled_at,
+            plan: {
+              wordCount: product.metadata['word_count'],
+              amount: session.plan.amount_decimal,
+              currency: session.plan.currency,
+              interval: session.plan.interval,
+              product: session.plan.product
+            }
+          })
+          newSub.save()
+        } else {
+          // Existing Subscription
+          subscriptionData.subscriptionId = session.id
+          subscriptionData.customerId = session.customer
+          subscriptionData.email = customer.email
+          subscriptionData.status = session.status
+          subscriptionData.start_date = session.start_date
+          subscriptionData.cancel_at = session.cancel_at
+          subscriptionData.cancel_at_period_end = session.cancel_at_period_end
+          subscriptionData.canceled_at = session.canceled_at
+          subscriptionData.plan.id = session.plan.id
+          ;(subscriptionData.plan.wordCount = product.metadata['word_count']),
+            (subscriptionData.plan.amount = session.plan.amount_decimal)
+          subscriptionData.plan.currency = session.plan.currency
+          subscriptionData.plan.interval = session.plan.interval
+          subscriptionData.plan.product = session.plan.product
+          subscriptionData.save()
+        }
         break
-      // case 'customer.subscription.deleted':
-      //   const deletedSubscription = event.data.object
-      //   console.log(`Subscription for ${deletedSubscription.id} was deleted!`)
-      //   console.log(deletedSubscription)
-      //   break
-      // // ... handle other event types
-      case 'customer.subscription.created':
-        const createdSubscription = event.data.object
-        console.log(`Subscription for ${createdSubscription.id} was created!`)
-        console.log(createdSubscription)
+
+      case 'customer.subscription.deleted':
+        console.log(`Subscription for ${session.id} was deleted!`)
+        try {
+          await Subscription.deleteOne({
+            subscriptionId: session.id
+          })
+        } catch (e) {
+          console.log(e)
+        }
         break
       default:
         // Unexpected event type
@@ -78,13 +99,5 @@ router.post(
     response.sendStatus(200)
   }
 )
-
-// Define a method to handle the successful payment intent.
-const handlePaymentIntentSucceeded = paymentIntent => {
-  // Get the Customer email from the PaymentIntent
-  const email = paymentIntent.receipt_email
-  console.log(email)
-  console.log(paymentIntent)
-}
 
 module.exports = router
