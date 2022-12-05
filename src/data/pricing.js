@@ -2,7 +2,7 @@ const storeItems = new Map([
   [
     1,
     {
-      priceId: 'price_1M6TheDfUj11qJP5djJqzj68',
+      priceId: process.env.PRICE_ID_1,
       name: 'Starter',
       interval: 'monthly',
       wordCount: 15000
@@ -11,7 +11,7 @@ const storeItems = new Map([
   [
     2,
     {
-      priceId: 'price_1M6Ti8DfUj11qJP5heDySIge',
+      priceId: process.env.PRICE_ID_2,
       name: 'Pro',
       interval: 'monthly',
       wordCount: 50000
@@ -20,7 +20,7 @@ const storeItems = new Map([
   [
     3,
     {
-      priceId: 'price_1M6TheDfUj11qJP5XDTUr1Mi',
+      priceId: process.env.PRICE_ID_3,
       name: 'Starter',
       interval: 'yearly',
       wordCount: 15000
@@ -29,7 +29,7 @@ const storeItems = new Map([
   [
     4,
     {
-      priceId: 'price_1M6Ti8DfUj11qJP52ukHmsYw',
+      priceId: process.env.PRICE_ID_4,
       name: 'Pro',
       interval: 'yearly',
       wordCount: 50000
